@@ -9,6 +9,8 @@ COPY web/ ./
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+# 国内网络加速（本机构建）：Go 模块走 goproxy.cn，跳过 sumdb 校验
+ENV GOPROXY=https://goproxy.cn,direct GOSUMDB=off
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY third_party/req/ third_party/req/
@@ -32,7 +34,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldfl
 
 FROM alpine:3.20
 # python3：login.sh 的 JSON 解析 / 签到 / 落盘；bash：shell 脚本体。
-RUN apk add --no-cache wget ca-certificates tzdata python3 bash gcompat libstdc++ proxychains-ng \
+# 国内网络加速（本机构建）：apk 源换阿里云；依赖列表与上游保持一致
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+ && apk add --no-cache wget ca-certificates tzdata python3 bash gcompat libstdc++ proxychains-ng \
  && adduser -D -u 10001 app \
  && mkdir -p /app/auths /app/data \
  && ln -s /app/data/qoder-umid/sdk /home/app/.config \
