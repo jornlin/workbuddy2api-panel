@@ -89,10 +89,13 @@ type Event struct {
 	CreditUnit       string  `json:"credit_unit,omitempty"`
 	// CacheHitTokens / CacheMissTokens 上游前缀缓存命中/未命中 token（issue #92）。
 	// 上游未回该维度时两者皆零值省略；hit=0 + miss>0 即整段未命中。
-	CacheHitTokens  int64  `json:"cache_hit_tokens,omitempty"`
-	CacheMissTokens int64  `json:"cache_miss_tokens,omitempty"`
-	ClientIP        string `json:"client_ip,omitempty"`
-	UserAgent       string `json:"user_agent,omitempty"`
+	CacheHitTokens  int64 `json:"cache_hit_tokens,omitempty"`
+	CacheMissTokens int64 `json:"cache_miss_tokens,omitempty"`
+	// SessionKey 会话键的短摘要（sha256 前 8 字节，16 hex）：同一段对话的所有轮次同值。
+	// 用于按对话归因「这一跳换了号/换了域没有」，不落客户端原始会话 id。
+	SessionKey string `json:"session_key,omitempty"`
+	ClientIP   string `json:"client_ip,omitempty"`
+	UserAgent  string `json:"user_agent,omitempty"`
 	// APIKey 请求带的密钥：客户端密钥记名字，管理员密钥记「管理员」，没开鉴权为空。不记原文。
 	APIKey string `json:"api_key,omitempty"`
 	// Error 失败原因：回给客户端的错误消息（流中途出错时是上游的错误帧），最多 200 字；成功的请求为空。

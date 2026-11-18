@@ -466,6 +466,24 @@ func (p *Pool) ServableByUIDForModel(uid, model, realm string) bool {
 	return p.servableIgnoringBusyLocked(e, time.Now(), model, realm)
 }
 
+// FloorBlockedByUID 报告该号是否因积分保底被拦（余额低于 floor 且该模型实测收费）。
+//
+// 与 ServableByUIDForModel 配套：余额触底是慢变量（签到/充值会回升），会话粘性只让
+// 本请求换号、**保留绑定**，下次余额回来了还能回到同一个号（按号缓存的前缀不丢）；
+// 冷却/禁用/模型限额这类才解绑。两者都 false 时才是「只是忙」。
+func (p *Pool) FloorBlockedByUID(uid, model, realm string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	e, ok := p.byUID[uid]
+	if !ok {
+		return false
+	}
+	if realm == "" {
+		realm = e.a.Realm()
+	}
+	return p.floorBlockedForRealmModel(e, model, realm, time.Now())
+}
+
 // PickByUID 若 uid 当前 healthy 且未占满在途名额，返回其凭证（记录 lastUsed 防撞号）；
 // 否则返回 nil。供会话粘性路由命中校验与直取使用。
 func (p *Pool) PickByUID(uid string) *auth.Auth {

@@ -7,6 +7,8 @@ package server
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +27,17 @@ import (
 	"github.com/yreidev/workbuddy2api-panel/internal/targets"
 	"github.com/yreidev/workbuddy2api-panel/internal/upstream"
 )
+
+// shortSessionKey 会话键的短摘要（sha256 前 8 字节 = 16 hex）：同一段对话的所有轮次
+// 同值，写进请求归档后可以按对话统计「跨了几个号/域、换号后缓存有没有断」，又不落
+// 客户端原始会话 id。空键（无会话的请求）返回空串。
+func shortSessionKey(k string) string {
+	if k == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(k))
+	return hex.EncodeToString(sum[:8])
+}
 
 // maxUserAgentLen 归档与面板展示保留的 UA 字节上限。UA 是客户端完全可控的
 // 自由文本（浏览器动辄 150+ 字符，恶意客户端可以塞几 KB），落盘前必须截断，
@@ -80,6 +93,8 @@ type chatStat struct {
 	cacheHit  int64
 	cacheMiss int64
 	hasCache  bool
+	// sessKey 会话键短摘要（见 shortSessionKey）：逐次请求写进归档，供按对话归因。
+	sessKey string
 
 	// 调用来源（客户端 IP / User-Agent）。空 = 未采集（logging.request_client_info
 	// 关闭，或非 chat 路径），展示层一律以 "-" 兜底。
@@ -454,6 +469,7 @@ func (t *requestTrace) event(status int, errBody []byte) reqlog.Event {
 		e.CreditUnit = s.creditUnit
 		e.CacheHitTokens = s.cacheHit
 		e.CacheMissTokens = s.cacheMiss
+		e.SessionKey = s.sessKey
 	}
 	e.ClientIP = t.clientIP
 	e.UserAgent = t.userAgent
