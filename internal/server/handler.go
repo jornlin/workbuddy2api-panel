@@ -1065,7 +1065,16 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				//   1) 余额触底：慢变量，本轮换号但保留绑定（签到/充值后回原号）；
 				//   2) 只是忙：等它空出来，最多 stickyBusyWait（累计，不是一次唤醒就放弃）；
 				//   3) 冷却/禁用/模型限额/域不符：真的用不了，解绑。
+				// 先判域：绑定号在另一个域（国内版优先把请求切走了）时，本轮换号但保留
+				// 绑定——解绑会让会话回到原域时被重新分配，按号缓存的前缀白丢；也不能
+				// 落进「忙」分支白等（号在另一个域，等它在这个域空出来没有意义）。
+				bindingRealm := ""
+				if st, ok := h.cfg.Pool.Status(stickyUID); ok {
+					bindingRealm = st.Realm
+				}
 				switch {
+				case realm != "" && bindingRealm != "" && bindingRealm != realm:
+					tried[stickyUID] = true
 				case h.cfg.Pool.FloorBlockedByUID(stickyUID, bareModel, realm):
 					tried[stickyUID] = true
 					log.Printf("INFO: [server] sticky floor: model=%s acct=%s 绑定号余额触底，本轮换号但保留绑定",

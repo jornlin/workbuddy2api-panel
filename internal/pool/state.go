@@ -478,10 +478,10 @@ func (p *Pool) FloorBlockedByUID(uid, model, realm string) bool {
 	if !ok {
 		return false
 	}
-	if realm == "" {
-		realm = e.a.Realm()
-	}
-	return p.floorBlockedForRealmModel(e, model, realm, time.Now())
+	// 用绑定号自己的域判收费倍率：跨域时 handler 传的是请求域（如 global），而号属于
+	// cn，按 global 查倍率会查不到 → 误判「免费」→ handler 走「只是忙」白等 2 秒。
+	// 与 PickByUIDForModel 内部的判据保持一致（那里一直用 e.a.Realm()）。
+	return p.floorBlockedForRealmModel(e, model, e.a.Realm(), time.Now())
 }
 
 // PickByUID 若 uid 当前 healthy 且未占满在途名额，返回其凭证（记录 lastUsed 防撞号）；
