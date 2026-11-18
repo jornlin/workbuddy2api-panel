@@ -1029,6 +1029,9 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// slot 这个请求排队等在途名额的状态（见 waitSlot）。
 	var slot slotWait
+	// stickyWaited 本请求已经为粘性绑定号等过一次在途名额：只等一次，避免绑定号被
+	// 长请求占着时反复等待。等不到就换号但保留绑定（见下方粘性分支）。
+	var stickyWaited bool
 	for i := 0; i < h.cfg.MaxRotate; i++ {
 		// 在选号之前取：选号和开始等之间放出的名额也能叫醒这个请求。
 		slotFreed := h.cfg.Pool.SlotFreed()
@@ -1045,13 +1048,31 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		if acct == nil && stickyUID != "" {
+		if acct == nil && stickyUID != "" && !tried[stickyUID] {
 			acct = h.cfg.Pool.PickByUIDForModel(stickyUID, bareModel)
-			if acct == nil || (realm != "" && acct.Realm() != realm) {
-				// 粘性号在当前模型不可用（冷却/占满/该模型被 6004 限额）或 realm 不符 → 解绑，
-				// 本次回落普通轮换。
+			if acct != nil && realm != "" && acct.Realm() != realm {
+				// realm 不符（国内版优先重定了域）：解绑，本次回落普通轮换。
 				unbindSticky()
 				acct = nil
+			}
+			if acct == nil && stickyUID != "" {
+				// 区分「绑定号只是这一跳在途满」和「绑定号真的用不了」：
+				// 前者是秒级瞬态，解绑却会永久删掉绑定；而上游按号缓存（deepseek），
+				// 一次误判就让整段对话的前缀缓存作废（生产日志：命中过又整段未命中的
+				// 34/38 次是换号）。所以只在后者解绑，前者先等它空出来。
+				if h.cfg.Pool.ServableByUIDForModel(stickyUID, bareModel, realm) {
+					if !stickyWaited {
+						stickyWaited = true
+						if h.waitStickySlot(r.Context(), slotFreed) {
+							i--
+							continue
+						}
+						log.Printf("INFO: [server] sticky busy: model=%s acct=%s 绑定号在途满，等了 %s 仍无空位，本轮换号但保留绑定",
+							bareModel, logfmt.Label(stickyUID, ""), stickyBusyWait)
+					}
+				} else {
+					unbindSticky()
+				}
 			}
 		}
 		if acct == nil {
@@ -1114,10 +1135,10 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				writeOpenAIError(w, http.StatusServiceUnavailable, "account_busy", "account is at its in-flight or requests-per-minute limit, test again later")
 				return
 			}
-			// 若被抢的正是粘性号，立即解绑并回落普通轮换，避免下一轮仍撞同一个
-			// 满载粘性号再浪费一次 PickByUID 往返（语义与 fail()/PickByUID-nil 的解绑一致）。
+			// 若被抢的正是粘性号：抢名额输给并发请求不等于绑定号不可用，保留绑定
+			// （下一跳它空出来还能回来，按号缓存的前缀不丢）；只让本请求不再优先它。
 			if stickyUID != "" && acct.UID == stickyUID {
-				unbindSticky()
+				stickyWaited = true
 			}
 			if woke {
 				// 排队醒来的几个请求抢同一个名额、没抢到：不算这个号失败，也不算换号，接着排队。
@@ -1668,6 +1689,27 @@ type slotWait struct {
 	rpm      bool      // 等满时有号是因为每分钟请求数到上限才忙（pool.max_rpm），末端错误据此说明
 	tpm      bool      // 等满时有号是因为每分钟 Token 数到上限才忙（pool.max_tpm），末端错误据此说明
 	logged   bool      // 「等到空位」的日志已经记过
+}
+
+// stickyBusyWait 粘性绑定号在途满时，为它等多久（一个请求合计最多等一次）。
+// 换号会让按号缓存的模型（deepseek）整段前缀作废，代价远高于等这一小会儿；
+// 但也不能等满 pool.in_flight_wait（30s）——绑定号可能被长请求长期占着，
+// 那样每个请求都要多等半分钟。
+const stickyBusyWait = 2 * time.Second
+
+// waitStickySlot 等粘性绑定号放出在途名额，最多 stickyBusyWait；freed 要在选号前取。
+// 客户端断开返回 false（不再等，交给轮转走末端错误）。
+func (h *Handler) waitStickySlot(ctx context.Context, freed <-chan struct{}) bool {
+	t := time.NewTimer(stickyBusyWait)
+	defer t.Stop()
+	select {
+	case <-freed:
+		return true
+	case <-t.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // waitSlot 选不到号时，看是不是只因为能接这个请求的号在途都满了（号都在、只是忙）：是就等到

@@ -26,6 +26,7 @@ func sessionConfig(ttl, gcInterval time.Duration, store redisstore.Store, p *poo
 		Available:          p.AvailableUIDs,
 		AvailableForModel:  p.WeightedAvailableUIDsForModelRealm,
 		AssignableForModel: p.CheapestWeightedUIDsForModelRealm,
+		ServableForModel:   p.ServableByUIDForModel,
 	}
 }
 

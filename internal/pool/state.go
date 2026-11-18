@@ -446,6 +446,26 @@ func (p *Pool) PickByUIDForModel(uid, model string) *auth.Auth {
 	return e.a
 }
 
+// ServableByUIDForModel 报告该号此刻除「在途名额」外能不能接这个模型/域：未禁用/冷却/熔断
+// （模型级冷却按 6004 豁免口径）、目录里有这个模型、域匹配、积分保底通过。
+//
+// 会话粘性用它区分「绑定号只是这一跳在途满」与「绑定号真的用不了」：忙是秒级瞬态，
+// 而解绑是永久删除；上游 prompt 缓存按号存（deepseek），一次误判就让整段对话的前缀
+// 缓存作废（生产日志：命中过又整段未命中的 34/38 次是换号）。只有这里返回 false 才解绑。
+// 调用方自己判 skip/分组（本函数只回答「这个号本身能不能接」）。
+func (p *Pool) ServableByUIDForModel(uid, model, realm string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	e, ok := p.byUID[uid]
+	if !ok {
+		return false
+	}
+	if realm != "" && e.a.Realm() != realm {
+		return false
+	}
+	return p.servableIgnoringBusyLocked(e, time.Now(), model, realm)
+}
+
 // PickByUID 若 uid 当前 healthy 且未占满在途名额，返回其凭证（记录 lastUsed 防撞号）；
 // 否则返回 nil。供会话粘性路由命中校验与直取使用。
 func (p *Pool) PickByUID(uid string) *auth.Auth {

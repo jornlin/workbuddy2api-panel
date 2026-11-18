@@ -203,8 +203,13 @@ func TestFull8ChatAcquireFailure(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)
 	}
-	if store.delCnt == 0 {
-		t.Fatal("粘性号被抢时应解绑")
+	// 抢名额输给并发请求只是「忙」，不等于绑定号不可用：保留绑定，下一跳它空出来
+	// 还能回到同一个号（按号缓存的前缀不丢）。解绑只在真的用不了时发生。
+	if store.delCnt != 0 {
+		t.Fatalf("粘性号被抢名额只是忙，不应解绑（delCnt=%d）", store.delCnt)
+	}
+	if _, ok := sess.Resolve("conv-1"); !ok {
+		t.Fatal("绑定应保留")
 	}
 }
 

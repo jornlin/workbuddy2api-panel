@@ -74,6 +74,11 @@ type Config struct {
 	// 已绑定会话的续用仍按 AvailableForModel 校验，免得免费号一出现就把会话全挪走。
 	// nil 时分配也用 AvailableForModel。
 	AssignableForModel func(model, realm string, skip map[string]bool) []string
+	// ServableForModel 报告 uid 除「在途名额」外能不能接这个模型/域（健康、模型可用、
+	// 域匹配、积分保底）。绑定号只是忙时保留绑定并原样交给调用方等待，而不是立刻重新分配：
+	// 上游按号缓存（deepseek），换一次号整段前缀就作废。nil 时退回旧语义（忙即视为
+	// 不可用，重新分配）。见 pool.ServableByUIDForModel。
+	ServableForModel func(uid, model, realm string) bool
 }
 
 // Router 会话粘性路由器。
@@ -200,7 +205,14 @@ func (r *Router) ResolveForModel(key, model, realm string, skip map[string]bool)
 			r.touch(key, e.uid, now)
 			return e.uid, true
 		}
-		// 绑定号已冷却/占满 → 失效，落入慢路径重分配。
+		// 绑定号只是这一跳在途满（健康、模型可用、域对得上）：保留绑定并原样交给调用方，
+		// 由选号侧为它等一小会儿再决定换号。这里重新分配的话，一次瞬态占满就把整段对话
+		// 迁到别的号上，按号缓存的前缀全作废（见 handler 的粘性等待）。
+		if r.servableFor(e.uid, model, realm, skip) {
+			r.touch(key, e.uid, now)
+			return e.uid, true
+		}
+		// 绑定号真的用不了（冷却/熔断/禁用/模型限额/积分保底/域不符）→ 落入慢路径重分配。
 	}
 
 	// ── Slow path: 写锁 re-check 后分配 ────────────────────
@@ -210,6 +222,11 @@ func (r *Router) ResolveForModel(key, model, realm string, skip map[string]bool)
 	// re-check：并发同 key 可能已被其他 goroutine 分配好。
 	if e2, found2 := r.entries[key]; found2 && !expired(e2, now, r.cfg.TTL) {
 		if available[e2.uid] {
+			r.entries[key] = entry{uid: e2.uid, lastActive: now}
+			return e2.uid, true
+		}
+		// 同上：只是忙的绑定号保留绑定（持锁内直接续期，别调 touch 二次加锁）。
+		if r.servableFor(e2.uid, model, realm, skip) {
 			r.entries[key] = entry{uid: e2.uid, lastActive: now}
 			return e2.uid, true
 		}
@@ -486,6 +503,15 @@ func (r *Router) availableSlice(model, realm string, skip map[string]bool) []str
 		return nil
 	}
 	return r.cfg.Available()
+}
+
+// servableFor 绑定号除「在途名额」外能不能接这个模型/域；skip 里的号不算。
+// 未注入回调时返回 false——保持旧语义（忙即视为不可用，走重新分配）。
+func (r *Router) servableFor(uid, model, realm string, skip map[string]bool) bool {
+	if r.cfg.ServableForModel == nil || skip[uid] {
+		return false
+	}
+	return r.cfg.ServableForModel(uid, model, realm)
 }
 
 func expired(e entry, now time.Time, ttl time.Duration) bool {
