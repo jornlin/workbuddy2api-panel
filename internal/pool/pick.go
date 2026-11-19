@@ -191,6 +191,47 @@ func (p *Pool) pick(tried map[string]bool, reqModel, realm string) *auth.Auth {
 	return e.a
 }
 
+// PickableForRealm 报告此刻该域**选不选得到号**：候选过滤与 pick 同口径（域、禁用暂停、
+// 冷却熔断、模型级冷却、模型目录、积分保底、在途名额），再按优先级层留下最高层。
+//
+// 为什么不能用 ServableForModel 代替：那只回答「有没有 servable 号」，不含在途和优先级层
+// 的最终过滤。国内版优先（cn_first）用它定域时会出现「判 cn 有号、pick 却选不到」，
+// 每轮都重新选中 cn，轮转耗尽后回 503——裸模型名请求的实测现象（2026-11-19）。
+//
+// 不记录 lastUsed/usedSeq：这是判定不是选号，不能改变轮转公平性。冷却兜底
+// （pickEarliestExpiryLocked）不参与判定：那是兜底路径，不该被当成「这个域现在能服务」。
+func (p *Pool) PickableForRealm(tried map[string]bool, model, realm string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	cands := make([]*entry, 0, len(p.byUID))
+	for uid, e := range p.byUID {
+		if tried[uid] || (realm != "" && e.a.Realm() != realm) {
+			continue
+		}
+		e.pruneExpiredModelCooldowns(now)
+		e.pruneExpiredModelCosts(now)
+		if model != "" {
+			if !p.servableFor(e, now, model) {
+				continue
+			}
+		} else if !e.healthy(now) {
+			continue
+		}
+		if p.floorBlockedForRealmModel(e, model, realm, now) {
+			continue
+		}
+		if p.busy(e, now) {
+			continue
+		}
+		cands = append(cands, e)
+	}
+	if len(cands) == 0 {
+		return false
+	}
+	return len(p.topPriorityLocked(cands, model, realm, now)) > 0
+}
+
 // costTierOf 该号在 reqModel 上的成本层与单价（每千 token 积分）：
 //
 //	0 = 已实测免费（限免期/夜间免费的号，最强偏好）

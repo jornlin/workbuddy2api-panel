@@ -52,10 +52,13 @@ func crossRealmFor(bare string, has func(realm, model string) bool) string {
 // 有能接的号（tried 里的除外，口径见 pool.ServableForModel）就只在国内版选；没有而国际版有，就在国际版选；
 // 两边都没有时为 ""，照合池走全冷却兜底和排队，两个域的号都算。
 func (h *Handler) cnFirstRealm(tried map[string]bool, model string) string {
+	// 用 PickableForRealm（与 pick 同口径）而不是 ServableForModel：后者只看
+	// 「有没有 servable 号」，漏掉在途/优先级层的最终过滤，会出现「判 cn 有号、
+	// 实际选不到」→ 每轮都重选 cn → 轮转耗尽回 503（裸模型名请求的实测现象）。
 	switch {
-	case h.cfg.Pool.ServableForModel(tried, model, "cn"):
+	case h.cfg.Pool.PickableForRealm(tried, model, "cn"):
 		return "cn"
-	case h.cfg.Pool.ServableForModel(tried, model, "global"):
+	case h.cfg.Pool.PickableForRealm(tried, model, "global"):
 		return "global"
 	}
 	return ""
