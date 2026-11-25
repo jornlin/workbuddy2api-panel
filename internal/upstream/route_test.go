@@ -207,7 +207,11 @@ func TestRouteAllAccountMethods(t *testing.T) {
 			c.globalModels = fetchGlobalModelsCache{} // 上一个方法刚拉过，清掉缓存才会再发
 			_ = c.FetchGlobalModels(g)
 		},
-		"FetchModels":                func(c *Client) { _, _ = c.FetchModels(a) },
+		"FetchModels":      func(c *Client) { _, _ = c.FetchModels(a) },
+		"FetchImageModels": func(c *Client) { _, _ = c.FetchImageModels(a) },
+		"GenerateImage": func(c *Client) {
+			_, _ = c.GenerateImage(ctx, a, ImageRequest{Model: "hunyuan-image-alpha", Prompt: "猫咪"}, false)
+		},
 		"GetCompensationStatus":      func(c *Client) { _, _ = c.GetCompensationStatus(a) },
 		"GlobalCompleteRegistration": func(c *Client) { _, _ = c.GlobalCompleteRegistration(g) },
 		"GlobalFetchCountries":       func(c *Client) { _, _ = c.GlobalFetchCountries(g, true) },

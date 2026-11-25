@@ -11,7 +11,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { dateTime, fmtK, timeMs } from '../../lib/format'
 import {
-  EMPTY_MODEL_FILTER, filterModels, hiddenFromConfig, hiddenModelSet, modelAvailability, probeFor, type Capability, type EffortFilter,
+  EMPTY_MODEL_FILTER, filterModels, hiddenFromConfig, hiddenModelSet, imageModes, isImageModel, modelAvailability, probeFor, type Capability,
+  type EffortFilter,
   type ModelAvailability, type ModelFilter, type ModelSort, type PromoFilter, type RealmFilter,
 } from '../../lib/models'
 import { qk, useConfig, useModels, useOverview, useProbes, useRecentRequests } from '../../lib/queries'
@@ -112,6 +113,10 @@ function ModelName({ m, hidden, showTarget }: { m: Model; hidden: boolean; showT
   if (m.is_default) caps.push(['默认', 'success'])
   if (m.supports_tool_call) caps.push([parseModelTarget(m.id).product === 'workbuddy' ? '工具' : '工具协议', 'warning'])
   if (m.supports_images) caps.push(['视觉', 'warning'])
+  if (isImageModel(m)) {
+    const modes = imageModes(m)
+    caps.push([modes.length > 1 ? '生图 · ' + modes.join('/') : modes[0], 'success'])
+  }
   if (m.supports_reasoning && !m.can_disable_thinking) caps.push(['思考常开', 'warning'])
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -236,6 +241,7 @@ export function ModelsPage() {
             <ToggleButton id="tools">工具调用</ToggleButton>
             <ToggleButton id="vision"><ToggleButtonGroup.Separator />视觉</ToggleButton>
             <ToggleButton id="reasoning"><ToggleButtonGroup.Separator />思考</ToggleButton>
+            <ToggleButton id="image"><ToggleButtonGroup.Separator />生图</ToggleButton>
             <ToggleButton id="default"><ToggleButtonGroup.Separator />默认模型</ToggleButton>
           </ToggleButtonGroup>
           <Pick label="按思考档位筛选" value={filter.effort} options={EFFORTS} onChange={(v) => set('effort', v)} className="w-32" />

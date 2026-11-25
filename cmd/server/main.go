@@ -221,6 +221,8 @@ func run(ctx context.Context, cfg *Config, cfgPath string, upd *selfupdate.Updat
 	up.UserAgent = cfg.Upstream.UserAgent
 	up.ClientVersion = cfg.Upstream.ClientVersion
 	up.CliVersion = cfg.Upstream.CliVersion
+	up.ImageBaseCN = cfg.Upstream.ImageBaseCN
+	up.ImageBaseGlobal = cfg.Upstream.ImageBaseGlobal
 	up.ClientName = cfg.Upstream.ClientName
 	up.DeviceToken = cfg.Upstream.DeviceToken
 	// 出站 TLS 指纹伪装（默认开）：关掉回落标准库 TLS。改这项要重启。

@@ -31,10 +31,12 @@ var translators = builtin.Registry()
 // tracedPaths 请求日志按这些路径记账：对话链路的三个入口和 /v1/search/messages（/mcp 只在调了搜索工具时
 // 记，见 mcp.go）。
 var tracedPaths = map[string]bool{
-	"/v1/chat/completions": true,
-	"/v1/messages":         true,
-	"/v1/responses":        true,
-	"/v1/search/messages":  true,
+	"/v1/chat/completions":   true,
+	"/v1/messages":           true,
+	"/v1/responses":          true,
+	"/v1/search/messages":    true,
+	"/v1/images/generations": true,
+	"/v1/images/edits":       true,
 }
 
 func (h *Handler) registerBridgeRoutes() {

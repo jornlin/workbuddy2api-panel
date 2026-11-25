@@ -459,6 +459,16 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 				for _, mi := range infos {
 					out = append(out, panelModelEntry("cn", mi, mi.Efforts, mi.DefaultEffort, p.cfg.Upstream.HTTP))
 				}
+				// 生图模型：FetchModels 会按 nonChatModel 过滤掉，单独补进面板
+				//（type=image），否则「模型」页看不到可用的生图能力。
+				if imgs, ierr := p.cfg.Upstream.FetchImageModels(acct); ierr == nil {
+					for _, mi := range imgs {
+						e := panelModelEntry("cn", mi, nil, "", p.cfg.Upstream.HTTP)
+						e["type"] = "image"
+						e["supports_image_generation"] = true
+						out = append(out, e)
+					}
+				}
 			}
 		}
 	}
@@ -482,6 +492,14 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 					efforts, defaults := p.cfg.Upstream.GlobalEffortSnapshot()
 					for _, mi := range infos {
 						out = append(out, panelModelEntry("global", mi, efforts[mi.ID], defaults[mi.ID], p.cfg.Upstream.HTTP))
+					}
+					if imgs, ierr := p.cfg.Upstream.FetchImageModels(acct); ierr == nil {
+						for _, mi := range imgs {
+							e := panelModelEntry("global", mi, nil, "", p.cfg.Upstream.HTTP)
+							e["type"] = "image"
+							e["supports_image_generation"] = true
+							out = append(out, e)
+						}
 					}
 				}
 			}

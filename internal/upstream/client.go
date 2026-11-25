@@ -758,6 +758,11 @@ type Client struct {
 	ChatBaseGlobal    string
 	BillingBaseGlobal string
 
+	// ImageBaseCN / ImageBaseGlobal 生图接口 base（/v2/images/*）。官方桌面端取 product.endpoint：
+	// 国内版 copilot.tencent.com、国际版 www.codebuddy.ai。空 = 内置默认。
+	ImageBaseCN     string
+	ImageBaseGlobal string
+
 	// GlobalEnabled 是否启用 global realm 路由（config global.enabled，缺省 true）。
 	// false 时即便用户 auth 写了 realm=global 也**不**路由到 global base——
 	// chatBase/billingBase 返回 CN base，路径也走 CN（双保险，与 auth.Realm() 的开关闸呼应）。

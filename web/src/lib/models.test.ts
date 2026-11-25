@@ -6,7 +6,7 @@
 // 上游能力是单选，这里是多选，单个能力的结果一致）。
 import { describe, expect, it } from 'vitest'
 import {
-  addHiddenModel, EMPTY_MODEL_FILTER, filterModels, hiddenFromConfig, hiddenModelSet, modelAvailability, probeFor, rateValue, type ModelFilter,
+  addHiddenModel, EMPTY_MODEL_FILTER, filterModels, hiddenFromConfig, hiddenModelSet, imageModes, isImageModel, modelAvailability, probeFor, rateValue, type ModelFilter,
   type ModelSort,
 } from './models'
 import type { Model, ModelLockRow, RequestEvent } from './types'
@@ -144,5 +144,32 @@ describe('modelAvailability', () => {
     expect(label('global:m', [], [ev({ status: 502, ok: false, outcome: 'http_error' }), ev({})])).toBe('上游错误')
     expect(label('global:m', [], [ev({ status: 403, ok: false, outcome: 'http_error', attempts: undefined }), ev({})])).toBe('可用')
     expect(label('global:m', [], [ev({ model: 'cn:m' })])).toBe('待验证')
+  })
+})
+
+describe('生图模型', () => {
+  const imageModels: Model[] = [
+    { id: 'cn:hunyuan-image-alpha', name: 'Hunyuan Image', tags: ['text-to-image'], type: 'image', supports_image_generation: true },
+    { id: 'cn:hunyuan-image-alpha-edit', name: 'Hunyuan Image Edit', tags: ['image-to-image'], supports_image_generation: true },
+    { id: 'global:hy-image-3.5', name: 'HY-Image', tags: ['text-to-image', 'image-to-image'], type: 'image' },
+    { id: 'cn:glm-5.2', name: 'GLM', tags: [] },
+  ]
+  it('按「生图」能力筛选', () => {
+    expect(filterModels(imageModels, { ...EMPTY_MODEL_FILTER, caps: ['image'] }).map((m) => m.id))
+      .toEqual(['cn:hunyuan-image-alpha', 'cn:hunyuan-image-alpha-edit', 'global:hy-image-3.5'])
+    expect(filterModels(imageModels, { ...EMPTY_MODEL_FILTER, caps: ['image', 'vision'] })).toEqual([])
+  })
+  it('关键字「生图」能搜到，对话模型搜不到', () => {
+    expect(filterModels(imageModels, { ...EMPTY_MODEL_FILTER, q: '生图' }).map((m) => m.id))
+      .toEqual(['cn:hunyuan-image-alpha', 'cn:hunyuan-image-alpha-edit', 'global:hy-image-3.5'])
+    expect(filterModels(imageModels, { ...EMPTY_MODEL_FILTER, q: '图生图' }).map((m) => m.id))
+      .toEqual(['cn:hunyuan-image-alpha-edit', 'global:hy-image-3.5'])
+    expect(filterModels(imageModels, { ...EMPTY_MODEL_FILTER, q: 'glm' }).map((m) => m.id)).toEqual(['cn:glm-5.2'])
+  })
+  it('能力判定与模式标签', () => {
+    expect(isImageModel(imageModels[0])).toBe(true)
+    expect(isImageModel(imageModels[3])).toBe(false)
+    expect(imageModes(imageModels[2])).toEqual(['文生图', '图生图'])
+    expect(imageModes({ id: 'x', type: 'image' })).toEqual(['生图'])
   })
 })

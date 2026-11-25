@@ -172,6 +172,8 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("POST /v1/chat/completions", h.withKeyAuth(sdktranslator.FormatOpenAI, false, h.chatCompletions))
 	h.registerBridgeRoutes()
 	h.mux.HandleFunc("GET /v1/models", h.withKeyAuth(sdktranslator.FormatOpenAI, false, h.models))
+	h.mux.HandleFunc("POST /v1/images/generations", h.withKeyAuth(sdktranslator.FormatOpenAI, false, h.imagesGenerations))
+	h.mux.HandleFunc("POST /v1/images/edits", h.withKeyAuth(sdktranslator.FormatOpenAI, false, h.imagesEdits))
 	h.mux.HandleFunc("GET /status", h.withAuth(h.status))
 	h.mux.HandleFunc("GET /healthz", h.healthz)
 	h.mux.HandleFunc("GET /readyz", h.readyz)
@@ -491,6 +493,12 @@ func (h *Handler) modelList() []map[string]any {
 			out = append(out, cnEntry(mi))
 		}
 	}
+	// 生图模型：nonChatModel 会把它们从对话目录过滤掉，这里单独列出（type=image）。
+	for _, mi := range h.fetchImageModels("cn") {
+		if _, hide := hidden["cn:"+mi.ID]; !hide {
+			out = append(out, imageModelEntry("cn", mi))
+		}
+	}
 	// 企业专属模型：域目录（个人号视角）里没有、池里某个企业号自己的目录里有，
 	// 请求只会派给目录里有它的企业号（见 upstream/account_catalog.go）。
 	if h.cfg.Upstream != nil {
@@ -545,6 +553,12 @@ func (h *Handler) modelList() []map[string]any {
 				}
 			}
 			out = append(out, entry)
+		}
+		// 生图模型（global）：与 CN 同口径单独列出。
+		for _, mi := range h.fetchImageModels("global") {
+			if _, hide := hidden["global:"+mi.ID]; !hide {
+				out = append(out, imageModelEntry("global", mi))
+			}
 		}
 		// 跨域负载均衡打开时，再列一份不带前缀的名字放在最前：客户端从列表里选到的
 		// 就是会分到两域的名字；带前缀的条目照旧保留，用来钉死某一域。

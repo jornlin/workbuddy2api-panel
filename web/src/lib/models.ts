@@ -8,7 +8,7 @@ import type { Model, ModelLockRow, Probe, RequestEvent } from './types'
 import { parseModelTarget, targetName } from './targets'
 
 export type RealmFilter = 'all' | 'cn' | 'global'
-export type Capability = 'tools' | 'vision' | 'reasoning' | 'default'
+export type Capability = 'tools' | 'vision' | 'reasoning' | 'image' | 'default'
 /** any = 有可调档位（任意一档）；off = 可以关闭思考 */
 export type EffortFilter = '' | 'any' | 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 /** promo = 有折扣或限时免费；free = 限时免费；discount = 打折但不免费 */
@@ -35,11 +35,30 @@ export function hasCapability(m: Model, c: Capability): boolean {
   if (c === 'tools') return !!m.supports_tool_call
   if (c === 'vision') return !!m.supports_images
   if (c === 'reasoning') return !!m.supports_reasoning
+  if (c === 'image') return isImageModel(m)
   return !!m.is_default
 }
 
+/** 生图模型：面板后端标了 type=image / supports_image_generation，或上游目录带生成类 tag */
+export function isImageModel(m: Model): boolean {
+  if (m.type === 'image' || m.supports_image_generation) return true
+  const tags = m.tags || []
+  return tags.includes('text-to-image') || tags.includes('image-to-image')
+}
+
+/** 文生图 / 图生图能力（tag 缺失时按生图模型兜底显示「生图」） */
+export function imageModes(m: Model): string[] {
+  const tags = m.tags || []
+  const out: string[] = []
+  if (tags.includes('text-to-image')) out.push('文生图')
+  if (tags.includes('image-to-image')) out.push('图生图')
+  if (!out.length && isImageModel(m)) out.push('生图')
+  return out
+}
+
 function searchText(m: Model): string {
-  return [m.id, targetName(parseModelTarget(m.id).target), m.name, m.vendor, m.description, (m.tags || []).join(' '), m.enterprise_only ? '企业专属' : ''].filter(Boolean).join(' ').toLowerCase()
+  const image = isImageModel(m) ? ['生图', ...imageModes(m), 'image'].join(' ') : ''
+  return [m.id, targetName(parseModelTarget(m.id).target), m.name, m.vendor, m.description, (m.tags || []).join(' '), m.enterprise_only ? '企业专属' : '', image].filter(Boolean).join(' ').toLowerCase()
 }
 
 export function matchModel(m: Model, f: ModelFilter): boolean {

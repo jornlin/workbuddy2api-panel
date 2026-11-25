@@ -22,6 +22,8 @@
 | `POST /v1/responses` | Bearer 或 `x-api-key` | OpenAI Responses 格式（Codex） |
 | `POST /v1/search/messages` | Bearer 或 `x-api-key` | 联网搜索，Anthropic Messages 形状，见[联网搜索](#联网搜索) |
 | `POST /mcp` | Bearer 或 `x-api-key` | MCP 服务器，只有一个工具 `web_search`，给 Codex 这类客户端联网搜索，见[联网搜索](#联网搜索) |
+| `POST /v1/images/generations` | Bearer | OpenAI 兼容文生图（JSON），见[生图](#生图) |
+| `POST /v1/images/edits` | Bearer | OpenAI 兼容图生图（multipart 或 JSON），见[生图](#生图) |
 | `GET /v1/models` | Bearer | 模型列表，见[模型名](#模型名) |
 | `GET /status` | Bearer | 账号状态汇总与每个账号的详情（积分、冷却、熔断、在途、粘性），以及按「域 + 模型」聚合的限额视图 `model_locks` |
 | `GET /healthz` | 无 | 健康检查：有可用账号返回 200，否则 503 |
@@ -48,6 +50,42 @@ Trae／Qoder 对话会区分目录不匹配（404）、本地账号队满（429�
 额度上游失败返回 HTTP 200 的查询状态，`error` 明确说明原因；此时 `snapshot` 保留上次成功结果，`checked_at` 为本次尝试时间，`snapshot.fetched_at` 为旧数据时间。没有旧快照时不提供数字。客户端必须检查 `error`，不能仅按 HTTP 200 判断查余额成功。失败不修改推理冷却／错误；令牌刷新失败的保护规则仍生效。
 
 `GET /panel/api/providers` 的每个账号新增可选 `quota`，与上述查询状态一致，只读缓存、不触发上游；成功快照持久化，重启后也会返回。接口不返回额度响应中的 UID、升级链接或凭证。当前支持 Trae 国内账号和 Qoder 国内 `displayMode=qoder`；Qoder 国际版及其他额度响应明确报未确认／未支持。
+
+## 生图
+
+`POST /v1/images/generations`（文生图）与 `POST /v1/images/edits`（图生图）走官方桌面端
+内置 CLI 的同一条上游链路（`/v2/images/generations`、`/v2/images/edits`），选号、换号重试、
+token 刷新和积分台账都与对话共用同一个账号池。
+
+可用模型从上游生图目录动态发现，在 `GET /v1/models` 里带 `"type": "image"` 与
+`"supports_image_generation": true`：
+
+- 国内版：`hunyuan-image-alpha`（文生图）、`hunyuan-image-alpha-edit`（图生图）
+- 国际版：`hy-image-3.5`（文生图 + 图生图）
+
+模型名同样支持 `cn:` / `global:` 前缀钉域；不带前缀时按模型目录自动选域。
+
+文生图示例：
+
+```bash
+curl http://<主机>:7863/v1/images/generations \
+  -H "Authorization: Bearer <密钥>" -H "Content-Type: application/json" \
+  -d '{"model":"hunyuan-image-alpha","prompt":"一只橘猫坐在窗台上","size":"1024x1024"}'
+```
+
+图生图用 OpenAI 的 multipart 形状（`image` 可传多张），也接受 JSON 里的
+`"image": ["data:image/png;base64,..."]`：
+
+```bash
+curl http://<主机>:7863/v1/images/edits \
+  -H "Authorization: Bearer <密钥>" \
+  -F model=hunyuan-image-alpha-edit -F prompt="改成水彩画" -F image=@cat.png
+```
+
+响应是 OpenAI images 形状：`{"created":...,"data":[{"url":"..."}],"model":"..."}`。
+请求 `"response_format":"b64_json"` 时，上游只给 URL 的模型（hunyuan 系）会由网关回读成
+base64 再返回。上游业务错误按类型映射：参数错误（14401/11101）回 400，
+模型不可用（11102/11103/11158 等）回 503。
 
 ## 客户端密钥
 
