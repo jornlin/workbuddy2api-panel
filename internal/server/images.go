@@ -202,14 +202,29 @@ func (h *Handler) handleImage(w http.ResponseWriter, r *http.Request, edit bool)
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request", "image is required for /v1/images/edits")
 		return
 	}
-	if edit {
-		for _, mi := range h.fetchImageModels(realm) {
-			if mi.ID == bare && !hasImageTag(mi.Tags, "image-to-image") {
-				fail(http.StatusBadRequest)
-				writeOpenAIError(w, http.StatusBadRequest, "invalid_request",
-					fmt.Sprintf("model %s does not support image-to-image; use %s", bare, h.defaultImageModel(realm, true)))
-				return
+	// 模型必须在该域的生图目录里：目录可用时提前拒绝，不去打上游。未知模型名上游回
+	// 401/14401 之类的杂错误，还会白跑一次账号与在途名额；OpenAI 语义下这就是参数错误。
+	// 目录暂时拉不到（空）时不拦，交给上游判定，避免网络抖动时误拒全部请求。
+	if infos := h.fetchImageModels(realm); len(infos) > 0 {
+		var mi *upstream.ModelInfo
+		for i := range infos {
+			if infos[i].ID == bare {
+				mi = &infos[i]
+				break
 			}
+		}
+		if mi == nil {
+			fail(http.StatusBadRequest)
+			writeOpenAIError(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("model %s is not available for image generation in realm %s; try %s",
+					bare, realm, h.defaultImageModel(realm, edit)))
+			return
+		}
+		if edit && !hasImageTag(mi.Tags, "image-to-image") {
+			fail(http.StatusBadRequest)
+			writeOpenAIError(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("model %s does not support image-to-image; use %s", bare, h.defaultImageModel(realm, true)))
+			return
 		}
 	}
 
