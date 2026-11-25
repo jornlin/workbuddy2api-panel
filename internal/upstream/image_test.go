@@ -75,3 +75,27 @@ func TestParseImageResponse(t *testing.T) {
 		t.Errorf("业务错误未归类: %v", err)
 	}
 }
+
+func TestImageErrorFromResponsePrefersBodyCode(t *testing.T) {
+	// 实测：未知模型回 HTTP 400 + body 业务码 14401，必须保留业务码才能映射成 400/不重试。
+	err := imageErrorFromResponse(400, []byte(`{"code":14401,"msg":"Image model [x] route config not found","requestId":"r1"}`))
+	var ie *ImageAPIError
+	if !errors.As(err, &ie) {
+		t.Fatalf("want ImageAPIError, got %T", err)
+	}
+	if ie.Code != 14401 {
+		t.Errorf("Code=%d want 14401（应取 body 业务码而非 HTTP 状态）", ie.Code)
+	}
+	if ie.Status != 400 {
+		t.Errorf("Status=%d want 400", ie.Status)
+	}
+	if ie.RequestID != "r1" {
+		t.Errorf("RequestID=%q want r1", ie.RequestID)
+	}
+
+	// body 不是 JSON 外壳时退回 HTTP 状态，消息保留原文。
+	err = imageErrorFromResponse(503, []byte("gateway down"))
+	if !errors.As(err, &ie) || ie.Code != 503 || ie.Msg != "gateway down" {
+		t.Errorf("fallback got %#v", ie)
+	}
+}

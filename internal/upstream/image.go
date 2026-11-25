@@ -160,7 +160,7 @@ func (c *Client) GenerateImage(ctx context.Context, a *auth.Auth, req ImageReque
 		return nil, fmt.Errorf("image: read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, &ImageAPIError{Code: resp.StatusCode, Msg: truncate(string(raw), 300), Status: resp.StatusCode}
+		return nil, imageErrorFromResponse(resp.StatusCode, raw)
 	}
 	return parseImageResponse(raw)
 }
@@ -243,6 +243,18 @@ type imageEnvelope struct {
 			Credit float64 `json:"credit"`
 		} `json:"usage"`
 	} `json:"data"`
+}
+
+// imageErrorFromResponse 非 200 响应的错误构造：上游可能用非 2xx 的 HTTP 状态承载业务错误
+// （实测未知模型回 HTTP 400 + body {"code":14401,...}）。优先取 body 里的业务码，
+// 解析不出来才退回 HTTP 状态 —— 否则 14401 这类参数错误会被误判成 502，
+// 还会被 imageRetryable 当成可换号重试，白白多打几轮上游。
+func imageErrorFromResponse(status int, raw []byte) *ImageAPIError {
+	var env imageEnvelope
+	if json.Unmarshal(raw, &env) == nil && env.Code != 0 {
+		return &ImageAPIError{Code: env.Code, Msg: env.Msg, RequestID: env.RequestID, Status: status}
+	}
+	return &ImageAPIError{Code: status, Msg: truncate(string(raw), 300), Status: status}
 }
 
 func parseImageResponse(raw []byte) (*ImageResponse, error) {
