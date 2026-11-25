@@ -84,6 +84,9 @@ type Pool struct {
 	// inFlightWait 能接请求的号在途都满时，请求最多等多久空位（SetInFlightWait 注入；默认
 	// defaultInFlightWait 30s，0 = 不等）。见 slotwait.go。
 	inFlightWait time.Duration
+	// stickyBusyWait 粘性绑定号在途满时，请求为绑定号等待的上限（SetStickyBusyWait 注入；
+	// 默认 defaultStickyBusyWait 10s，0 = 不等直接换号）。换号会清空按号缓存，见 slotwait.go。
+	stickyBusyWait time.Duration
 	// slotMu / slotFreed 放出在途名额的通知（见 SlotFreed）；slotFreed 为 nil = 没人在等。
 	slotMu    sync.Mutex
 	slotFreed chan struct{}
@@ -133,6 +136,7 @@ func New(stateFp string) *Pool {
 		costExploreInterval: defaultCostExploreInterval,
 		exploreLast:         map[string]time.Time{},
 		inFlightWait:        defaultInFlightWait,
+		stickyBusyWait:      defaultStickyBusyWait,
 		waveThreshold:       defaultRestrictionWaveThreshold,
 		waveWindow:          defaultRestrictionWaveWindow,
 		wavePause:           defaultRestrictionWavePause,

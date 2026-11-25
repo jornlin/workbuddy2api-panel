@@ -168,6 +168,7 @@ func run(ctx context.Context, cfg *Config, cfgPath string, upd *selfupdate.Updat
 	p.SetMaxInFlight(cfg.Pool.MaxInFlight)
 	p.SetMaxInFlightGlobal(cfg.Pool.MaxInFlightGlobal) // global 域 WAF 风控分档（P1-1）
 	p.SetInFlightWait(cfg.InFlightWaitDur)             // 号都在途占满时排队等空位（默认 30s；0 不等）
+	p.SetStickyBusyWait(cfg.StickyBusyWaitDur)        // 粘性绑定号在途满时等待上限（默认 10s；0 不等直接换号）
 	p.SetMaxRPM(cfg.Pool.MaxRPM)                       // 每号每分钟请求数上限（0 不限），超了同在途满
 	p.SetMaxRPMGlobal(cfg.Pool.MaxRPMGlobal)
 	p.SetMaxTPM(cfg.Pool.MaxTPM) // 每号每分钟 Token 数上限（0 不限），超了同在途满
@@ -866,6 +867,7 @@ func saveConfig(raw []byte, path string, live *livecfg.Holder, p *pool.Pool, up 
 	p.SetMaxInFlight(runtimeCfg.Pool.MaxInFlight)
 	p.SetMaxInFlightGlobal(runtimeCfg.Pool.MaxInFlightGlobal)
 	p.SetInFlightWait(runtimeCfg.InFlightWaitDur)
+	p.SetStickyBusyWait(runtimeCfg.StickyBusyWaitDur)
 	p.SetMaxRPM(runtimeCfg.Pool.MaxRPM)
 	p.SetMaxRPMGlobal(runtimeCfg.Pool.MaxRPMGlobal)
 	p.SetMaxTPM(runtimeCfg.Pool.MaxTPM)

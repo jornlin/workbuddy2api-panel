@@ -246,6 +246,7 @@ type Config struct {
 		MaxInFlight        int    `json:"max_in_flight"`        // 单账号最大在途请求数，0 = 不限
 		MaxInFlightGlobal  int    `json:"max_in_flight_global"` // global 域单账号在途上限（WAF 风控紧域压低并发），0 = 回落默认 2
 		InFlightWait       string `json:"in_flight_wait"`       // 能接的号在途都满时请求最多等多久空位，默认 "30s"，"0" = 不等直接 503
+		StickyBusyWait     string `json:"sticky_busy_wait"`     // 粘性绑定号在途满时为其等待上限，默认 "10s"（换号会清空按号缓存），"0" = 不等直接换号
 		MaxRPM             int    `json:"max_rpm"`              // 国内版单号每分钟请求数上限（最近 60 秒），0 = 不限
 		MaxRPMGlobal       int    `json:"max_rpm_global"`       // 国际版单号每分钟请求数上限，0 = 不限；两档各管各的域
 		MaxTPM             int64  `json:"max_tpm"`              // 国内版单号每分钟 Token 数上限（最近 60 秒），0 = 不限
@@ -317,6 +318,8 @@ type Config struct {
 	CostExploreIntervalDur time.Duration `json:"-"`
 	// InFlightWaitDur 解析后的排队等空位上限；0 = 不等。
 	InFlightWaitDur time.Duration `json:"-"`
+	// StickyBusyWaitDur 解析后的粘性绑定号等待上限；0 = 不等。
+	StickyBusyWaitDur time.Duration `json:"-"`
 	// RestrictionWaveWindowDur / RestrictionWavePauseDur 解析后的风控波窗口与暂停时长。
 	RestrictionWaveWindowDur time.Duration `json:"-"`
 	RestrictionWavePauseDur  time.Duration `json:"-"`
@@ -388,6 +391,9 @@ func Default() *Config {
 	c.Pool.MaxInFlightGlobal = 2
 	// 号都在途占满时排队等空位，默认 30s（参考 sub2api 的 fallback_wait_timeout）；"0" 不等。
 	c.Pool.InFlightWait = "30s"
+	// 粘性绑定号在途满时为它等待的上限：换号会清空按号缓存的整段前缀，默认 10s
+	//（2s 段长均值仅 1.1，几乎每请求换号，命中率被压到 56%）。
+	c.Pool.StickyBusyWait = "10s"
 	c.Pool.BreakerThreshold = 3
 	c.Pool.BreakerCooldown = "30m"
 	c.Pool.BreakerCooldownMax = "6h"
@@ -687,6 +693,16 @@ func (c *Config) normalize() error {
 	}
 	if c.InFlightWaitDur < 0 {
 		c.InFlightWaitDur = 0
+	}
+	// 粘性绑定号等待：空值回落默认 10s，"0" 是合法值（不等，直接换号），负值钳 0。
+	if c.Pool.StickyBusyWait == "" {
+		c.Pool.StickyBusyWait = "10s"
+	}
+	if c.StickyBusyWaitDur, err = time.ParseDuration(c.Pool.StickyBusyWait); err != nil {
+		return fmt.Errorf("pool.sticky_busy_wait: %w", err)
+	}
+	if c.StickyBusyWaitDur < 0 {
+		c.StickyBusyWaitDur = 0
 	}
 	// 风控波：阈值 0 是合法值（关闭），负值钳 0；时长 0 没有合理语义，空值或非正值回落默认。
 	if c.Pool.RestrictionWaveThreshold < 0 {

@@ -1077,7 +1077,7 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				// 绑定号拿不到时按三种原因分流（上游按号缓存，一次误判就让整段对话的
 				// 前缀缓存作废——生产日志：命中过又整段未命中的 34/38 次是换号）：
 				//   1) 余额触底：慢变量，本轮换号但保留绑定（签到/充值后回原号）；
-				//   2) 只是忙：等它空出来，最多 stickyBusyWait（累计，不是一次唤醒就放弃）；
+				//   2) 只是忙：等它空出来，最多 sticky_busy_wait（累计，不是一次唤醒就放弃）；
 				//   3) 冷却/禁用/模型限额/域不符：真的用不了，解绑。
 				// 先判域：绑定号在另一个域（国内版优先把请求切走了）时，本轮换号但保留
 				// 绑定——解绑会让会话回到原域时被重新分配，按号缓存的前缀白丢；也不能
@@ -1094,8 +1094,9 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 					log.Printf("INFO: [server] sticky floor: model=%s acct=%s 绑定号余额触底，本轮换号但保留绑定",
 						bareModel, logfmt.Label(stickyUID, ""))
 				case h.cfg.Pool.ServableByUIDForModel(stickyUID, bareModel, realm):
+				stickyWait := h.cfg.Pool.StickyBusyWait()
 					if stickyDeadline.IsZero() {
-						stickyDeadline = time.Now().Add(stickyBusyWait)
+						stickyDeadline = time.Now().Add(stickyWait)
 					}
 					if left := time.Until(stickyDeadline); left > 0 {
 						if h.waitStickySlot(r.Context(), slotFreed, left) {
@@ -1103,7 +1104,7 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 							continue
 						}
 						log.Printf("INFO: [server] sticky busy: model=%s acct=%s 绑定号在途满，累计等满 %s 仍无空位，本轮换号但保留绑定",
-							bareModel, logfmt.Label(stickyUID, ""), stickyBusyWait)
+							bareModel, logfmt.Label(stickyUID, ""), stickyWait)
 					}
 					tried[stickyUID] = true
 				default:
@@ -1727,11 +1728,6 @@ type slotWait struct {
 	logged   bool      // 「等到空位」的日志已经记过
 }
 
-// stickyBusyWait 粘性绑定号在途满时，为它等多久（一个请求合计最多等一次）。
-// 换号会让按号缓存的模型（deepseek）整段前缀作废，代价远高于等这一小会儿；
-// 但也不能等满 pool.in_flight_wait（30s）——绑定号可能被长请求长期占着，
-// 那样每个请求都要多等半分钟。
-const stickyBusyWait = 2 * time.Second
 
 // waitStickySlot 等粘性绑定号放出在途名额，最多 d（剩余预算，见 stickyDeadline）；
 // freed 要在选号前取。客户端断开返回 false（不再等，交给轮转走末端错误）。

@@ -11,6 +11,13 @@ import "time"
 // defaultInFlightWait 号都在途占满时，请求最多等多久空位。
 const defaultInFlightWait = 30 * time.Second
 
+// defaultStickyBusyWait 粘性绑定号在途满时，请求为绑定号等待的上限。
+//
+// 换号会让按号缓存的模型（deepseek）整段前缀作废，代价远高于多等一会儿；默认从
+// 旧值 2s 提到 10s——生产日志显示 2s 时段长均值仅 1.1（几乎每请求都换号），
+// 绑定号的在途满几乎都来自同轮并发/短请求，10s 内通常已释放。
+const defaultStickyBusyWait = 10 * time.Second
+
 // SetInFlightWait 注入号都在途占满时请求最多等多久空位；0 = 不等，直接回 503。负值保留原值。
 func (p *Pool) SetInFlightWait(d time.Duration) {
 	p.mu.Lock()
@@ -21,6 +28,23 @@ func (p *Pool) SetInFlightWait(d time.Duration) {
 }
 
 // InFlightWait 当前生效的等待上限。
+// SetStickyBusyWait 注入粘性绑定号在途满时的等待上限；0 = 不等（直接换号），负值保留原值。
+func (p *Pool) SetStickyBusyWait(d time.Duration) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if d < 0 {
+		return
+	}
+	p.stickyBusyWait = d
+}
+
+// StickyBusyWait 返回粘性绑定号在途满时的等待上限。
+func (p *Pool) StickyBusyWait() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.stickyBusyWait
+}
+
 func (p *Pool) InFlightWait() time.Duration {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

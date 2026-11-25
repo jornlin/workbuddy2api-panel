@@ -140,6 +140,7 @@
 | `pool.max_tpm` | `0` | 国内版 WorkBuddy 单账号最近 60 秒累计 Token 上限（按上游返回的真实 `usage` 事后记账），到了就当这个号忙，换号或排队；`0` = 不限，见[网关与选号](gateway.md#选号策略) |
 | `pool.max_tpm_global` | `0` | 国际版 WorkBuddy 单账号最近 60 秒累计 Token 上限，只管国际版的号，不回落到 `pool.max_tpm`；`0` = 不限 |
 | `pool.in_flight_wait` | `30s` | 能接请求的号在途都满、每分钟请求数或每分钟 Token 数到上限时，请求最多排队等多久空位，等满才回 503，见[网关与选号](gateway.md#选号策略)。`0` = 不等。Trae／Qoder 的本地账号等位也使用此值，队满与上游排队见[多平台上游](multi-platform.md) |
+| `pool.sticky_busy_wait` | `10s` | 会话粘性绑定号在途满时，请求为绑定号等待的上限（超过才换号）。换号会让按号缓存的模型（deepseek）整段前缀作废、命中率骤降，默认 10s；`0` = 不等直接换号 |
 | `pool.cross_realm` | `off` | 跨域负载均衡：`off` 关闭、`merge` 合池、`cn_first` 国内版优先；老配置的 `true` 读成 `merge`、`false` 读成 `off`，见[网关与选号](gateway.md#跨域负载均衡) |
 | `pool.credit_floor` | `0` | 积分保底：余额低于该值的账号不再接实测收费的模型；`0` = 关闭 |
 | `pool.prefer_expiring` | `true` | 有积分快过期的账号选号权重 ×3，优先把快过期的积分用掉 |
