@@ -1117,8 +1117,22 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			acct = h.pickWarm(sessKey, bareModel, realm, tried)
 		}
 		if acct == nil {
-			// 模型感知 + realm 感知选号：模型非空时启用 6004 模型级冷却豁免
-			// （healthyForModel），realm 谓词过滤跨域账号。
+			// 再避开其他会话的绑定号：绑定号的在途名额优先留给它自己的会话。
+			// 不避让的话，别的会话的普通轮换会把绑定号在途占满，绑定会话等不满就被迫
+			// 换号，按号缓存整段作废。避不开时下一段会回落到全池，不会选不到号。
+			if avoid := h.otherBoundUIDs(sessKey); len(avoid) > 0 {
+				skip := make(map[string]bool, len(tried)+len(avoid))
+				for k := range tried {
+					skip[k] = true
+				}
+				for k := range avoid {
+					skip[k] = true
+				}
+				acct = h.cfg.Pool.PickExcludingForRealm(skip, bareModel, realm)
+			}
+		}
+		if acct == nil {
+			// 全池兜底：模型感知 + realm 感知选号（6004 模型级冷却豁免 + 跨域过滤）。
 			acct = h.cfg.Pool.PickExcludingForRealm(tried, bareModel, realm)
 		}
 		if acct == nil && h.waitSlot(r.Context(), slotFreed, &slot, tried, bareModel, realm) {
@@ -1823,6 +1837,15 @@ func (h *Handler) keyScope(ctx context.Context) (map[string]bool, []string) {
 // pickWarm 换号时先回到这段对话最近成功用过、这次还没试过的号（见 session.Router.WarmUIDs），
 // 校验同粘性号（PickByUIDForModel：该模型可用、在途未满、积分保底），也只回此刻最高的优先级层里的号。
 // 粘性关闭、没有会话键或这些号都用不了时返回 nil。
+// otherBoundUIDs 其他会话当前绑定的账号（TTL 内）；无会话/无 key 时返回 nil。
+// 请求级选号先避开它们，把绑定号的在途名额留给它自己的会话。
+func (h *Handler) otherBoundUIDs(sessKey string) map[string]bool {
+	if h.cfg.Session == nil || sessKey == "" {
+		return nil
+	}
+	return h.cfg.Session.BoundUIDsExcept(sessKey)
+}
+
 func (h *Handler) pickWarm(sessKey, model, realm string, tried map[string]bool) *auth.Auth {
 	if h.cfg.Session == nil || sessKey == "" {
 		return nil

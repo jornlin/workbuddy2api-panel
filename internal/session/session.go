@@ -354,6 +354,31 @@ func (r *Router) WarmUIDs(key string) []string {
 	return slices.Clone(e.uids)
 }
 
+// BoundUIDsExcept 返回除 key 自身外、当前仍在 TTL 内被其他会话绑定的 uid 集合。
+//
+// 供请求级选号避开"别人的绑定号"：绑定号的在途名额应优先留给它自己的会话，
+// 否则其他会话的普通轮换会把绑定号在途占满 → 绑定会话等不满 → 被迫换号 →
+// 上游按号缓存（deepseek）的整段前缀作废，这正是缓存命中率被拉低的主要路径。
+func (r *Router) BoundUIDsExcept(key string) map[string]bool {
+	now := time.Now()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if len(r.entries) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(r.entries))
+	for k, e := range r.entries {
+		if k == key || expired(e, now, r.cfg.TTL) {
+			continue
+		}
+		out[e.uid] = true
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // Unbind 解除会话绑定（请求失败时调用，让该会话下次重新分配）。返回是否存在。
 func (r *Router) Unbind(key string) bool {
 	r.mu.Lock()
