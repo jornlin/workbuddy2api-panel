@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -47,6 +48,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/yreidev/workbuddy2api-panel/internal/auth"
+	"github.com/yreidev/workbuddy2api-panel/internal/logfmt"
 	"github.com/yreidev/workbuddy2api-panel/internal/session"
 )
 
@@ -63,13 +65,13 @@ const (
 func (c *Client) desktopUA(a *auth.Auth) string { return c.defaultDaemonUA(a) }
 
 // 两域桌面端（macOS arm64）安装包 cli/product.json 的 commit 与 date（毫秒）：国内版 5.11.3、国际版
-// 5.11.4。上报事件按账号所在的域取：任务中心只对国内版个人号开放，每日活跃上报两域都发。配了
+// 5.11.7。上报事件按账号所在的域取：任务中心只对国内版个人号开放，每日活跃上报两域都发。配了
 // client_version 时版本号跟着变，这两项不变。
 const (
 	desktopCommitCN          = "ecace0f7028166695994300182295329b8b95449"
 	desktopReleaseDateCN     = int64(1794501984587) // 2026-11-12T16:46:24.587Z
-	desktopCommitGlobal      = "0026dff06ce8414140e6f2fa731049855c3ecc6f"
-	desktopReleaseDateGlobal = int64(1794817062759) // 2026-11-16T08:17:42.759Z
+	desktopCommitGlobal      = "525fde106956c7265f8b4d8d93aadd139915588b"
+	desktopReleaseDateGlobal = int64(1795618208997) // 2026-11-25T14:50:08.997Z
 )
 
 // desktopBuild 账号所在域的桌面端 commit 与发布时间。
@@ -224,15 +226,29 @@ func (c *Client) ReportDesktopEvent(a *auth.Auth, events ...DesktopEvent) error 
 	if err != nil {
 		return err
 	}
-	req, err := newAccountRequest(context.Background(), a, http.MethodPost, c.desktopBase(a)+desktopReportPath, bytes.NewReader(raw))
-	if err != nil {
-		return err
+	doOnce := func() (string, error) {
+		req, err := newAccountRequest(context.Background(), a, http.MethodPost, c.desktopBase(a)+desktopReportPath, bytes.NewReader(raw))
+		if err != nil {
+			return "", err
+		}
+		// 官方上报服务 StandardEventService.send 显式把 Content-Type 设成带 charset 的写法，
+		// 其余头由官方请求框架给（frameworkHeaders）。
+		c.frameworkHeaders(req, a, c.desktopUA(a))
+		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+		_, err = c.doJSON(req)
+		return bearerToken(req), err
 	}
-	// 官方上报服务 StandardEventService.send 显式把 Content-Type 设成带 charset 的写法，
-	// 其余头由官方请求框架给（frameworkHeaders）。
-	c.frameworkHeaders(req, a, c.desktopUA(a))
-	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-	_, err = c.doJSON(req)
+	usedToken, err := doOnce()
+	if IsRefreshableError(err) {
+		if ok, rerr := c.RefreshAfter401(a, usedToken); ok {
+			_, err = doOnce()
+			return err
+		} else if isSessionDead(rerr) {
+			return rerr
+		} else if rerr != nil {
+			log.Printf("WARN: [upstream] desktop_report refresh after 401 acct=%s: %v", logfmt.Label(a.UID, a.Nickname), rerr)
+		}
+	}
 	return err
 }
 

@@ -110,7 +110,7 @@
 | `upstream.header_timeout_seconds` | 同 `timeout_seconds` | 聊天请求等到首字节的上限 |
 | `upstream.idle_timeout_seconds` | `300` | 聊天流中途无数据的上限 |
 | `upstream.user_agent` | 空 | 出站 User-Agent 整体覆盖（任务中心的桌面端上报、外观设置、专家列表除外）。空 = 按请求的来源取官方的 UA：对话、模型目录由桌面端内置的 CLI 发，形如 `WorkBuddy/<client_version> <应用名>/<client_version> CLI/<cli_version>`；联网搜索也由内置 CLI 发，但不经它的请求框架，是 `CLI/<client_version>`；登录、刷新令牌、上报由桌面端后台服务发，两段都是应用名：`<应用名>/<client_version> <应用名>/<client_version> CLI/<cli_version>`；积分、签到由后台服务另用 axios 发，是 `axios/1.16.1`；成长中心、积分补偿、新手礼包、试用只在官网网页上调，用 Mac 上 Chrome 的 UA。应用名国内版是 `WorkBuddy`，国际版是 `workbuddy-ai` |
-| `upstream.client_version` | 空（国内版 `5.11.3`，国际版 `5.11.4`） | UA、`X-IDE-Version` 与 `X-Client-Version` 里的桌面端版本；填了就两个域都用这个值 |
+| `upstream.client_version` | 空（国内版 `5.11.3`，国际版 `5.11.7`） | UA、`X-IDE-Version` 与 `X-Client-Version` 里的桌面端版本；填了就两个域都用这个值 |
 | `upstream.cli_version` | 空（两域均为 `2.176.0`） | UA 里 `CLI/` 段与 `extra_vars.harnessMetadata.harnessVersion` 的版本，是各域桌面端内置 CLI 的版本；填了就两个域都用这个值。联网搜索的 UA 例外：官方在那里写的是桌面端版本（`client_version`） |
 | `upstream.image_base_cn` | 空（`https://copilot.tencent.com`） | 国内版生图接口 base（`/v2/images/*`）。空 = 官方桌面端 product.endpoint |
 | `upstream.image_base_global` | 空（`https://www.codebuddy.ai`） | 国际版生图接口 base。空 = 官方桌面端 product.endpoint |
